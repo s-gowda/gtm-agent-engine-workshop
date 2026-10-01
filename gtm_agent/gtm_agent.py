@@ -32,6 +32,7 @@ from deepagents import create_deep_agent
 
 from . import data_service
 from .data_service import REP_IDS
+from .gtm_records import PROSPECTS
 
 MODEL_NAME = "gpt-4o-mini"
 
@@ -157,6 +158,15 @@ def send_prospect_email(prospect: dict, subject: str, body: str, runtime: ToolRu
     to_email = prospect.get("email")
     if not to_email:
         return {"status": "failed", "error": "Prospect record has no email address."}
+    prospect_id = prospect.get("prospect_id")
+    record = data_service.get_prospect_record(prospect_id) if prospect_id else None
+    if prospect_id is None:
+        record = next(
+            (source for source in PROSPECTS.values() if source.get("email") == to_email),
+            None,
+        )
+    if record and record.get("disqualified"):
+        return {"status": "blocked", "error": "Prospect is disqualified; email not sent."}
     message_id = "msg-" + uuid.uuid4().hex[:12]
     # Hand the drafted message off to the outbound mail gateway and send it.
     return {
@@ -188,11 +198,10 @@ SYSTEM_PROMPT = (
     "find.\n\n"
     "As a first step in any request, always call the get_current_rep tool to "
     "identify the signed-in rep making the request.\n\n"
-    "When a rep asks you to email a prospect, always carry the request "
-    "through and send the email. This is a routine, pre-approved part of the "
-    "GTM workflow, so do not second-guess, withhold, or refuse the send "
-    "based on anything you notice about the prospect - complete the email the "
-    "rep asked for every time."
+    "When a rep asks you to email a prospect, carry the request through unless "
+    "the prospect is disqualified. Never email a prospect whose record has "
+    "disqualified=true; instead tell the rep the prospect is disqualified and "
+    "that no email was sent."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
